@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://record.devotedemocracy.com/schemas/record-v1.schema.json",
+  "title": "Devote Public Record entry, version 1",
+  "description": "One log entry (an envelope). See SPEC.md.",
+  "type": "object",
+  "required": ["v", "type", "body"],
+  "additionalProperties": false,
+  "properties": {
+    "v": { "const": 1 },
+    "type": { "enum": ["manifest", "admission", "revocation", "ballot", "reveal", "tally", "snapshot", "query", "audit", "appBuild", "anchor"] },
+    "schemes": { "$ref": "#/$defs/schemes" },
+    "body": { "type": "object" }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "manifest" } } }, "then": { "required": ["schemes"], "properties": { "body": { "$ref": "#/$defs/manifest" } } } },
+    { "if": { "properties": { "type": { "const": "admission" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/admission" } } } },
+    { "if": { "properties": { "type": { "const": "revocation" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/revocation" } } } },
+    { "if": { "properties": { "type": { "const": "ballot" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/ballot" } } } },
+    { "if": { "properties": { "type": { "const": "reveal" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/reveal" } } } },
+    { "if": { "properties": { "type": { "const": "tally" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/tally" } } } },
+    { "if": { "properties": { "type": { "const": "snapshot" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/snapshot" } } } },
+    { "if": { "properties": { "type": { "const": "query" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/query" } } } },
+    { "if": { "properties": { "type": { "const": "audit" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/audit" } } } },
+    { "if": { "properties": { "type": { "const": "appBuild" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/appBuild" } } } },
+    { "if": { "properties": { "type": { "const": "anchor" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/anchor" } } } }
+  ],
+  "$defs": {
+    "hex32": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "b64u": { "type": "string", "pattern": "^[A-Za-z0-9_-]*$" },
+    "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "isoTime": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]+)?)?Z$" },
+    "leafIndex": { "type": "integer", "minimum": 0 },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9._:~/-]{1,200}$" },
+    "schemes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "admission": { "type": "string" },
+        "membership": { "type": "string" },
+        "encryption": { "type": "string" },
+        "transport": { "type": "string" },
+        "tally": { "type": "string" },
+        "disclosure": { "type": "string" },
+        "slice": { "type": "string" },
+        "anchor": { "type": "array", "items": { "type": "string" } },
+        "dataStore": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "required": ["alg", "keyId", "sig"],
+      "additionalProperties": false,
+      "properties": {
+        "alg": { "const": "ed25519" },
+        "keyId": { "$ref": "#/$defs/id" },
+        "sig": { "$ref": "#/$defs/b64u" }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "required": ["stageId", "billKey", "legislation", "stage", "opensAt", "closesAt", "choices", "franchises", "groupRoots", "encryption", "disclosure", "admissionKeys", "carryFrom", "retentionUntil"],
+      "additionalProperties": false,
+      "properties": {
+        "stageId": { "$ref": "#/$defs/id" },
+        "billKey": { "$ref": "#/$defs/id" },
+        "legislation": {
+          "type": "object",
+          "required": ["id", "jurisdiction", "title"],
+          "additionalProperties": false,
+          "properties": { "id": { "$ref": "#/$defs/id" }, "jurisdiction": { "$ref": "#/$defs/id" }, "title": { "type": "string", "maxLength": 500 } }
+        },
+        "stage": {
+          "type": "object",
+          "required": ["id", "label"],
+          "additionalProperties": false,
+          "properties": { "id": { "$ref": "#/$defs/id" }, "label": { "type": "string", "maxLength": 200 } }
+        },
+        "opensAt": { "$ref": "#/$defs/isoTime" },
+        "closesAt": { "$ref": "#/$defs/isoTime" },
+        "graceSeconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
+        "choices": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" } },
+        "franchises": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "groupRoots": { "type": "object", "additionalProperties": { "type": "object", "required": ["root", "size", "depth"], "additionalProperties": false, "properties": { "root": { "$ref": "#/$defs/decimal" }, "size": { "type": "integer", "minimum": 0 }, "depth": { "type": "integer", "minimum": 1, "maximum": 32 } } } },
+        "encryption": {
+          "type": "object",
+          "required": ["keyId", "publicKey"],
+          "additionalProperties": false,
+          "properties": { "keyId": { "$ref": "#/$defs/id" }, "publicKey": { "$ref": "#/$defs/b64u" }, "attestedImageDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } }
+        },
+        "disclosure": {
+          "type": "object",
+          "required": ["k", "l", "ladders"],
+          "additionalProperties": false,
+          "properties": {
+            "k": { "type": "integer", "minimum": 2 },
+            "l": { "type": "integer", "minimum": 1 },
+            "ladders": { "type": "object", "description": "Field (or dimension) name to its levels, finest first.", "additionalProperties": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[a-zA-Z][a-zA-Z0-9-]{0,39}$" } } }
+          }
+        },
+        "dimensions": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-zA-Z][a-zA-Z0-9-]{0,39}$" } },
+        "admissionKeys": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["keyId", "publicKey"], "additionalProperties": false, "properties": { "keyId": { "$ref": "#/$defs/id" }, "publicKey": { "$ref": "#/$defs/b64u" } } } },
+        "carryFrom": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+        "retentionUntil": { "$ref": "#/$defs/isoTime" }
+      }
+    },
+    "admission": {
+      "type": "object",
+      "required": ["franchise", "commitment", "signatures"],
+      "additionalProperties": false,
+      "properties": {
+        "franchise": { "$ref": "#/$defs/id" },
+        "commitment": { "$ref": "#/$defs/decimal" },
+        "signatures": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/signature" } }
+      }
+    },
+    "revocation": {
+      "type": "object",
+      "required": ["franchise", "commitment", "reason", "signatures"],
+      "additionalProperties": false,
+      "properties": {
+        "franchise": { "$ref": "#/$defs/id" },
+        "commitment": { "$ref": "#/$defs/decimal" },
+        "reason": { "enum": ["erasure", "re-enrolment", "eligibility-lapsed", "fraud"] },
+        "signatures": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/signature" } }
+      }
+    },
+    "commitments": {
+      "type": "object",
+      "description": "Field name to { level: commitment }.",
+      "additionalProperties": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/hex32" } }
+    },
+    "ballot": {
+      "type": "object",
+      "required": ["manifest", "rowType", "scope", "franchise", "groupRoot", "nullifier", "message", "proof", "ciphertext"],
+      "additionalProperties": false,
+      "properties": {
+        "manifest": { "$ref": "#/$defs/leafIndex" },
+        "rowType": { "enum": ["main", "demographic", "full"] },
+        "dimension": { "type": "string", "pattern": "^[a-zA-Z][a-zA-Z0-9-]{0,39}$" },
+        "scope": { "type": "string", "pattern": "^bill:[A-Za-z0-9._:~-]{1,160}(/dim:[a-zA-Z][a-zA-Z0-9-]{0,39}|/full)?$" },
+        "franchise": { "$ref": "#/$defs/id" },
+        "groupRoot": { "$ref": "#/$defs/decimal" },
+        "nullifier": { "$ref": "#/$defs/decimal" },
+        "message": { "$ref": "#/$defs/hex32" },
+        "proof": {
+          "type": "object",
+          "required": ["merkleTreeDepth", "points"],
+          "additionalProperties": false,
+          "properties": {
+            "merkleTreeDepth": { "type": "integer", "minimum": 1, "maximum": 32 },
+            "points": { "type": "array", "minItems": 8, "maxItems": 8, "items": { "$ref": "#/$defs/decimal" } }
+          }
+        },
+        "commitments": { "$ref": "#/$defs/commitments" },
+        "ciphertext": {
+          "type": "object",
+          "required": ["keyId", "enc", "ct"],
+          "additionalProperties": false,
+          "properties": { "keyId": { "$ref": "#/$defs/id" }, "enc": { "$ref": "#/$defs/b64u" }, "ct": { "$ref": "#/$defs/b64u" } }
+        },
+        "fallback": { "type": "object", "required": ["store", "ref"], "additionalProperties": false, "properties": { "store": { "type": "string" }, "ref": { "type": "string", "maxLength": 200 } } }
+      },
+      "allOf": [
+        { "if": { "properties": { "rowType": { "const": "demographic" } } }, "then": { "required": ["dimension", "commitments"] } },
+        { "if": { "properties": { "rowType": { "const": "main" } } }, "then": { "required": ["commitments"], "not": { "required": ["dimension"] } } },
+        { "if": { "properties": { "rowType": { "const": "full" } } }, "then": { "not": { "anyOf": [{ "required": ["dimension"] }, { "required": ["commitments"] }] } } }
+      ]
+    },
+    "revealedField": {
+      "oneOf": [
+        { "type": "object", "required": ["level", "value", "salt"], "additionalProperties": false, "properties": { "level": { "type": "string" }, "value": { "type": ["string", "boolean"] }, "salt": { "$ref": "#/$defs/b64u" } } },
+        { "type": "object", "required": ["withheld"], "additionalProperties": false, "properties": { "withheld": { "const": true } } }
+      ]
+    },
+    "reveal": {
+      "type": "object",
+      "required": ["manifest", "rows"],
+      "additionalProperties": false,
+      "properties": {
+        "manifest": { "$ref": "#/$defs/leafIndex" },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ballot", "fields"],
+            "additionalProperties": false,
+            "properties": { "ballot": { "$ref": "#/$defs/leafIndex" }, "fields": { "type": "object", "additionalProperties": { "$ref": "#/$defs/revealedField" } } }
+          }
+        }
+      }
+    },
+    "countTable": {
+      "type": "object",
+      "required": ["field", "level", "rows"],
+      "additionalProperties": false,
+      "properties": {
+        "rowType": { "enum": ["main", "demographic"] },
+        "dimension": { "type": "string" },
+        "field": { "type": "string" },
+        "level": { "type": "string" },
+        "rows": { "type": "array", "items": { "type": "object", "required": ["value", "counts"], "additionalProperties": false, "properties": { "value": { "type": ["string", "boolean"] }, "counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } } } } }
+      }
+    },
+    "tally": {
+      "type": "object",
+      "required": ["manifest", "totals", "tables", "disclosureReport", "reveals"],
+      "additionalProperties": false,
+      "properties": {
+        "manifest": { "$ref": "#/$defs/leafIndex" },
+        "reveals": { "type": "array", "items": { "$ref": "#/$defs/leafIndex" } },
+        "totals": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "tables": { "type": "array", "items": { "$ref": "#/$defs/countTable" } },
+        "disclosureReport": {
+          "type": "object",
+          "required": ["k", "l", "rowsCounted", "fieldsGeneralised", "fieldsWithheld"],
+          "additionalProperties": false,
+          "properties": {
+            "k": { "type": "integer" },
+            "l": { "type": "integer" },
+            "rowsCounted": { "type": "integer", "minimum": 0 },
+            "fieldsGeneralised": { "type": "integer", "minimum": 0 },
+            "fieldsWithheld": { "type": "integer", "minimum": 0 },
+            "heldBackForDifferencing": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "snapshots": { "type": "array", "items": { "type": "object", "required": ["snapshot", "url"], "additionalProperties": false, "properties": { "snapshot": { "$ref": "#/$defs/leafIndex" }, "url": { "type": "string", "maxLength": 500 } } } }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["manifest", "hash"],
+      "additionalProperties": false,
+      "properties": { "manifest": { "$ref": "#/$defs/leafIndex" }, "hash": { "$ref": "#/$defs/hex32" } }
+    },
+    "query": {
+      "type": "object",
+      "required": ["manifest", "role", "descriptor"],
+      "additionalProperties": false,
+      "properties": {
+        "manifest": { "$ref": "#/$defs/leafIndex" },
+        "role": { "enum": ["admin", "public", "system"] },
+        "descriptor": { "type": "object", "required": ["groupBy"], "additionalProperties": false, "properties": { "groupBy": { "type": "array", "items": { "type": "string" } }, "filter": { "type": "object", "additionalProperties": { "type": ["string", "boolean"] } } } }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "required": ["kind", "asOf", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["memberCounts", "billingReconciliation", "sampling", "erasures"] },
+        "asOf": { "$ref": "#/$defs/isoTime" },
+        "data": { "type": "object" },
+        "signatures": { "type": "array", "items": { "$ref": "#/$defs/signature" } }
+      }
+    },
+    "appBuild": {
+      "type": "object",
+      "required": ["platform", "version", "build", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "platform": { "enum": ["ios", "android", "web", "enclave", "ledger"] },
+        "version": { "type": "string", "maxLength": 50 },
+        "build": { "type": "string", "maxLength": 50 },
+        "sha256": { "$ref": "#/$defs/hex32" },
+        "sourceCommit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+        "repository": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "required": ["scheme", "checkpoint"],
+      "additionalProperties": false,
+      "properties": {
+        "scheme": { "enum": ["ots-bitcoin-v1", "ethereum-l1-v1"] },
+        "checkpoint": { "type": "object", "required": ["size", "rootHash", "noteSha256"], "additionalProperties": false, "properties": { "size": { "type": "integer", "minimum": 0 }, "rootHash": { "$ref": "#/$defs/b64u" }, "noteSha256": { "$ref": "#/$defs/hex32" } } },
+        "ots": { "$ref": "#/$defs/b64u" },
+        "ethereum": { "type": "object", "required": ["chainId", "txHash", "blockNumber"], "additionalProperties": false, "properties": { "chainId": { "type": "integer" }, "txHash": { "type": "string", "pattern": "^0x[0-9a-f]{64}$" }, "blockNumber": { "type": "integer" } } }
+      }
+    }
+  }
+}
