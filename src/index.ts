@@ -3,7 +3,7 @@
  * See SPEC.md. Works in Node 22+ and modern browsers (WebCrypto, no Buffer).
  */
 export { canonicalize, canonicalBytes } from './canonical.ts'
-export { toHex, fromHex, toBase64, fromBase64, toBase64Url, fromBase64Url, equalBytes } from './bytes.ts'
+export { concat, toHex, fromHex, toBase64, fromBase64, toBase64Url, fromBase64Url, equalBytes } from './bytes.ts'
 export { sha256, leafHash, nodeHash } from './hash.ts'
 export { rootHash, inclusionProof, consistencyProof, verifyInclusion, verifyConsistency } from './merkle.ts'
 export { parseVerifierKey, verifierKeyString, noteKeyId, parseNote, verifyNote, parseCheckpoint, verifyCheckpoint, ed25519Verify, type Checkpoint, type Verifier, type SignedNote } from './note.ts'
