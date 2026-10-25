@@ -143,8 +143,18 @@ what it says. The voter's phone checks that its exact entry is in the log (secti
 
 - A ballot's `proof.merkleTreeDepth` MUST equal the `depth` frozen for its franchise in the manifest.
   Every proof in a stage then has the same shape, and the depth says nothing about the voter.
-- Phones MUST build their own Merkle path from the public list of admissions (section 11). They MUST
-  never ask a server for "my" path, which would reveal which commitment is theirs.
+- Phones MUST build their own Merkle path from public data (section 11). They MUST never ask a server for
+  "my" path, which would reveal which commitment is theirs. Two ways count as building from public data:
+  - from the whole list of admissions; or
+  - for large groups, from the voter's own **block** of admissions plus the published **block roots**.
+    Blocks are aligned runs of `blockSize` leaves (a power of two, 65,536 by default) in admission
+    order, each a complete subtree of the group's tree (the last may be partial). The manifest records
+    `blockSize` and `blockRootsSha256` for each franchise. The block-roots file, a JSON array of decimal
+    roots in order, is published next to the log at `groups/<manifest leaf index>/<franchise>.json`.
+    Anyone can recompute it from the admissions and check its hash, and the roots must combine to
+    `groupRoots[franchise].root`. Fetching one block tells whoever serves it only which block of
+    `blockSize` people a phone belongs to. Phones SHOULD fetch blocks through the relay, and the vote
+    itself stays anonymous across the whole group.
 
 ### Encryption (`hpke-xwing-v1`)
 
@@ -299,7 +309,8 @@ Self-declared dimensions (ethnicity and others) are sent only with the voter's e
 
 - **Draft 2 (2026-10-25):**
   - HPKE `info`, `aad` and plaintext format are fixed, with 512-byte padding.
-  - Proof depth is fixed per franchise, and phones build their Merkle path locally.
+  - Proof depth is fixed per franchise, and phones build their Merkle path locally, from the whole list or
+    from their own block plus published block roots.
   - Carried rows can be re-revealed at a coarser level.
   - Anchors hash the signed text without signatures.
   - Undecryptable ballots are marked as such.
