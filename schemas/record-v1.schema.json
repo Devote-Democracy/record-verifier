@@ -80,6 +80,8 @@
         "closesAt": { "$ref": "#/$defs/isoTime" },
         "graceSeconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
         "choices": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" } },
+        "choiceLabels": { "type": "object", "description": "Display text per choice id, e.g. {\"dont-object\": \"Don't object\"}.", "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 60 } },
+        "kind": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$", "description": "What is being voted on, e.g. bill-stage, si-negative, si-affirmative, motion, lords-amendments, lcm, treaty, nomination." },
         "franchises": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
         "groupRoots": { "type": "object", "additionalProperties": { "type": "object", "required": ["root", "size", "depth"], "additionalProperties": false, "properties": { "root": { "$ref": "#/$defs/decimal" }, "size": { "type": "integer", "minimum": 0 }, "depth": { "type": "integer", "minimum": 1, "maximum": 32 }, "blockSize": { "type": "integer", "minimum": 2 }, "blockRootsSha256": { "$ref": "#/$defs/hex32" } } } },
         "encryption": {

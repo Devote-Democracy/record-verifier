@@ -91,6 +91,22 @@ ciphertexts, signatures), as each schema field says.
 
 A new approach is a new scheme id. Entries under older ids stay verifiable by the rules for those ids.
 
+## 5a. What is voted on
+
+A manifest's `kind` says what kind of decision the stage is, and `choices` lists its choice ids, with
+display text in `choiceLabels`. The defaults for Great Britain:
+
+| `kind` | `choices` |
+|---|---|
+| `bill-stage`, `motion` | `aye`, `no`, `abstain` |
+| `si-negative`, `treaty` | `object`, `dont-object`, `abstain` |
+| `si-affirmative` | `approve`, `reject`, `abstain` |
+| `lords-amendments` | `agree`, `disagree`, `abstain` |
+| `lcm` | `consent`, `withhold-consent`, `abstain` |
+| `nomination` | `confirm`, `reject`, `abstain` |
+
+Verifiers treat choice ids as opaque. Labels are for display only.
+
 ## 6. Ballots, rows and commitments
 
 A voter's phone sends three kinds of **row** for one vote. Each is a separate `ballot` entry with its
@@ -320,4 +336,5 @@ Self-declared dimensions (ethnicity and others) are sent only with the voter's e
     counted rows.
   - Live statistics and snapshot format are defined.
   - Canonical ladders for Great Britain (Appendix A).
+  - Manifest `kind` and `choiceLabels`, with default choice sets per kind (section 5a).
 - **Draft 1 (2026-10-25):** first version.
