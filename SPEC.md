@@ -149,8 +149,10 @@ what it says. The voter's phone checks that its exact entry is in the log (secti
   - for large groups, from the voter's own **block** of admissions plus the published **block roots**.
     Blocks are aligned runs of `blockSize` leaves (a power of two, 65,536 by default) in admission
     order, each a complete subtree of the group's tree (the last may be partial). The manifest records
-    `blockSize` and `blockRootsSha256` for each franchise. The block-roots file, a JSON array of decimal
-    roots in order, is published next to the log at `groups/<manifest leaf index>/<franchise>.json`.
+    `blockSize` and `blockRootsSha256` for each franchise. The block-roots file, a JSON array of the
+    roots in order as decimal strings, is published next to the log at
+    `groups/<manifest leaf index>/<franchise>.json`, in canonical form (JCS, e.g. `["123","456"]`).
+    `blockRootsSha256` is the lowercase hex `SHA-256` of those canonical bytes.
     Anyone can recompute it from the admissions and check its hash, and the roots must combine to
     `groupRoots[franchise].root`. Fetching one block tells whoever serves it only which block of
     `blockSize` people a phone belongs to. Phones SHOULD fetch blocks through the relay, and the vote
