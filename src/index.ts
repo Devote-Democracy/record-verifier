@@ -12,4 +12,6 @@ export { validateEnvelope, entryBytes, entryLeafHash, parseEntry, type Envelope,
 export { checkDisclosure, type PublishedRow, type DisclosureViolation } from './disclosure.ts'
 export { recountStage, type LoggedEntry, type StageRecount, type CountTable, type Issue } from './recount.ts'
 
+export { readLog, httpFetcher, parseEntryBundle, buildEntryBundle, entryBundlePath, tileIndexPath, TILE_WIDTH, type Fetcher, type LogSnapshot } from './tiles.ts'
+
 export const LOG_ORIGIN = 'record.devotedemocracy.com/log/v1'

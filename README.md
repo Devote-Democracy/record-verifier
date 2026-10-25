@@ -35,6 +35,16 @@ const result = await recountStage(entries, manifestIndex)           // entries f
 console.log(result.totals, result.tallyMatches, result.issues)
 ```
 
+## Command line
+
+```bash
+npx record-verify log     --base <tiles URL> --key <log verifier key>
+npx record-verify recount --base <tiles URL> --key <log verifier key> --manifest <leaf index>
+```
+
+`log` downloads every entry, checks each is canonical and valid and that they hash to the signed
+checkpoint, and lists the stages. `recount` recounts one stage and compares it with the published tally.
+
 ## Develop
 
 ```bash

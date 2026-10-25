@@ -16,10 +16,14 @@
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "src",
+    "cli",
     "schemas/*.json"
   ]
 }
