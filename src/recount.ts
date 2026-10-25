@@ -20,6 +20,7 @@ export type StageRecount = {
   tables: CountTable[]
   countedRows: number
   carriedRows: number
+  undecryptable: number
   disclosureViolations: DisclosureViolation[]
   tallyMatches: boolean | null
   issues: Issue[]
@@ -37,7 +38,8 @@ export async function recountStage(entries: LoggedEntry[], manifestIndex: number
   if (!manifest || manifest.type !== 'manifest') throw new Error(`entry ${manifestIndex} is not a manifest`)
   if (!opts.verifyProof) issues.push({ severity: 'warning', message: 'Membership proofs were not checked (no Semaphore verifier supplied).' })
 
-  const own = await revealedFinals(entries, manifestIndex, manifest, issues, opts.verifyProof)
+  const stats = { undecryptable: 0 }
+  const own = await revealedFinals(entries, manifestIndex, manifest, issues, opts.verifyProof, stats)
 
   // Carry: the latest revealed row per (scope, nullifier) among earlier stages named in carryFrom.
   const carried: CountedRow[] = []
@@ -46,11 +48,38 @@ export async function recountStage(entries: LoggedEntry[], manifestIndex: number
     const earlier = entries.filter((e) => e.envelope.type === 'manifest' && e.index < manifestIndex && carryFrom.has(e.envelope.body.stageId) && e.envelope.body.billKey === manifest.body.billKey)
     const latest = new Map<string, CountedRow>()
     for (const m of earlier.sort((a, b) => a.index - b.index)) {
-      const rows = await revealedFinals(entries, m.index, m.envelope, [], opts.verifyProof)
+      const rows = await revealedFinals(entries, m.index, m.envelope, [], opts.verifyProof, { undecryptable: 0 })
       for (const r of rows) latest.set(r.key, r)
     }
     const ownKeys = new Set(own.map((r) => r.key))
     for (const [key, r] of latest) if (r.carry && !ownKeys.has(key)) carried.push(r)
+  }
+
+  // Re-reveals: this stage may publish carried rows again at a coarser level (SPEC.md section 6).
+  const rereveals = new Map<number, Record<string, RevealedField>>()
+  for (const e of entries) {
+    if (e.envelope.type !== 'reveal' || e.envelope.body.manifest !== manifestIndex) continue
+    for (const row of e.envelope.body.rows) {
+      const target = byIndex.get(row.ballot)
+      if (target?.type === 'ballot' && target.body.manifest !== manifestIndex && row.fields) rereveals.set(row.ballot, row.fields)
+    }
+  }
+  const carriedByBallot = new Map(carried.map((r, i) => [r.ballot, i]))
+  const ladders = manifest.body.disclosure.ladders as Record<string, string[]>
+  for (const [ballotIndex, fields] of rereveals) {
+    const at = carriedByBallot.get(ballotIndex)
+    if (at === undefined) { issues.push({ severity: 'error', entry: ballotIndex, message: 'Re-revealed a ballot that is not carried into this stage.' }); continue }
+    const row = carried[at]!
+    const commitments = byIndex.get(ballotIndex)!.body.commitments
+    let ok = true
+    for (const [field, f] of Object.entries(fields)) {
+      if (!(await opensCommitment(commitments, field, f))) { ok = false; issues.push({ severity: 'error', entry: ballotIndex, message: `Re-revealed ${field} does not open its commitment.` }); continue }
+      const before = row.fields[field]
+      if ((field === 'choice' || field === 'carry') && !('withheld' in f) && before && !('withheld' in before) && f.value !== before.value) { ok = false; issues.push({ severity: 'error', entry: ballotIndex, message: `A re-reveal changed ${field}.` }) }
+      const ladder = ladders[field === 'value' ? (row.dimension ?? '') : field]
+      if (ladder && before && !('withheld' in before) && !('withheld' in f) && ladder.indexOf(f.level) < ladder.indexOf(before.level)) { ok = false; issues.push({ severity: 'error', entry: ballotIndex, message: `A re-reveal made ${field} finer, not coarser.` }) }
+    }
+    if (ok) carried[at] = { ...row, fields: { ...row.fields, ...fields } }
   }
 
   const counted = [...own, ...carried]
@@ -70,14 +99,14 @@ export async function recountStage(entries: LoggedEntry[], manifestIndex: number
   }
   const tables = [...tableMap.values()]
 
-  const published: PublishedRow[] = own.map((r) => ({
+  const published: PublishedRow[] = counted.map((r) => ({
     rowType: r.rowType,
     ...(r.dimension ? { dimension: r.dimension } : {}),
     choice: r.choice,
     qis: Object.fromEntries(Object.entries(r.fields).filter(([k, f]) => !NOT_QI.has(k) && !('withheld' in f)).map(([k, f]) => [k, { level: (f as { level: string }).level, value: (f as { value: string | boolean }).value }])),
   }))
-  const { k, l } = manifest.body.disclosure
-  const disclosureViolations = checkDisclosure(published, k, l)
+  const { k, l, minChoiceSupport } = manifest.body.disclosure
+  const disclosureViolations = checkDisclosure(published, k, l, minChoiceSupport ?? 1)
   for (const v of disclosureViolations) issues.push({ severity: 'error', message: `Published group breaks the ${v.rule} rule (${v.rows} rows, ${v.distinctChoices} choices): ${canonicalize(v.group)}` })
 
   const tallies = entries.filter((e) => e.envelope.type === 'tally' && e.envelope.body.manifest === manifestIndex)
@@ -89,10 +118,11 @@ export async function recountStage(entries: LoggedEntry[], manifestIndex: number
     if (!tallyMatches) issues.push({ severity: 'error', entry: tallies.at(-1)!.index, message: 'The published tally does not match the recount.' })
   }
 
-  return { manifest: manifestIndex, totals, tables, countedRows: counted.length, carriedRows: carried.length, disclosureViolations, tallyMatches, issues }
+  if (stats.undecryptable) issues.push({ severity: 'warning', message: `${stats.undecryptable} counted ballot(s) were marked undecryptable and count nowhere.` })
+  return { manifest: manifestIndex, totals, tables, countedRows: counted.length, carriedRows: carried.length, undecryptable: stats.undecryptable, disclosureViolations, tallyMatches, issues }
 }
 
-async function revealedFinals(entries: LoggedEntry[], manifestIndex: number, manifest: Envelope, issues: Issue[], verifyProof?: (b: Record<string, any>) => Promise<boolean>): Promise<CountedRow[]> {
+async function revealedFinals(entries: LoggedEntry[], manifestIndex: number, manifest: Envelope, issues: Issue[], verifyProof: ((b: Record<string, any>) => Promise<boolean>) | undefined, stats: { undecryptable: number }): Promise<CountedRow[]> {
   const m = manifest.body
   const reveals = entries.filter((e) => e.envelope.type === 'reveal' && e.envelope.body.manifest === manifestIndex)
   const firstReveal = reveals.length ? Math.min(...reveals.map((r) => r.index)) : Infinity
@@ -108,17 +138,28 @@ async function revealedFinals(entries: LoggedEntry[], manifestIndex: number, man
     finals.set(`${b.scope}|${b.nullifier}`, e)
   }
 
+  // This stage's ballots only; rows naming earlier stages' ballots are re-reveals, handled by the caller.
+  const byIdx = new Map(entries.map((e) => [e.index, e.envelope]))
+  const ownBallot = (index: number) => byIdx.get(index)?.type === 'ballot' && byIdx.get(index)!.body.manifest === manifestIndex
   const revealed = new Map<number, Record<string, RevealedField>>()
-  for (const r of reveals) for (const row of r.envelope.body.rows) revealed.set(row.ballot, row.fields)
+  const undecryptable = new Set<number>()
+  for (const r of reveals) {
+    for (const row of r.envelope.body.rows) {
+      if (!ownBallot(row.ballot)) continue
+      if (row.undecryptable) undecryptable.add(row.ballot)
+      else revealed.set(row.ballot, row.fields)
+    }
+  }
 
   const out: CountedRow[] = []
   const finalIndexes = new Set([...finals.values()].map((e) => e.index))
-  for (const ballotIndex of revealed.keys()) {
+  for (const ballotIndex of [...revealed.keys(), ...undecryptable]) {
     if (!finalIndexes.has(ballotIndex)) issues.push({ severity: 'error', entry: ballotIndex, message: 'A ballot that is not the final ballot of its scope was revealed.' })
   }
   for (const [key, e] of finals) {
     const b = e.envelope.body
     if (b.rowType === 'full') continue
+    if (undecryptable.has(e.index)) { stats.undecryptable++; continue }
     const fields = revealed.get(e.index)
     if (!fields) {
       if (reveals.length) issues.push({ severity: 'error', entry: e.index, message: 'A counted ballot was not revealed.' })
@@ -150,6 +191,7 @@ async function revealedFinals(entries: LoggedEntry[], manifestIndex: number, man
 async function ballotProblem(b: Record<string, any>, m: Record<string, any>, verifyProof?: (b: Record<string, any>) => Promise<boolean>): Promise<string | null> {
   if (!(m.franchises as string[]).includes(b.franchise)) return 'franchise not in the manifest'
   if (m.groupRoots[b.franchise]?.root !== b.groupRoot) return 'group root is not the one frozen in the manifest'
+  if (m.groupRoots[b.franchise]?.depth !== b.proof.merkleTreeDepth) return 'proof depth is not the one fixed for the franchise'
   const expectedScope = b.rowType === 'main' ? `bill:${m.billKey}` : b.rowType === 'demographic' ? `bill:${m.billKey}/dim:${b.dimension}` : `bill:${m.billKey}/full`
   if (b.scope !== expectedScope) return `scope should be ${expectedScope}`
   if (b.rowType === 'demographic' && m.dimensions && !(m.dimensions as string[]).includes(b.dimension)) return 'dimension not in the manifest'

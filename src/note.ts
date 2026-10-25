@@ -99,3 +99,8 @@ export async function verifyCheckpoint(noteText: string, logKey: Verifier, expec
   if (expectedOrigin !== undefined && checkpoint.origin !== expectedOrigin) throw new Error(`checkpoint origin is ${checkpoint.origin}, expected ${expectedOrigin}`)
   return checkpoint
 }
+
+/** SPEC.md section 7: the value anchors commit to, SHA-256 of the checkpoint's signed text (no signatures). */
+export async function anchorDigest(noteText: string): Promise<string> {
+  return toHex(await sha256(utf8(parseNote(noteText).text)))
+}

@@ -1,6 +1,7 @@
 # The Devote Public Record: format and verification, version 1
 
-Status: **draft 1**, 2026-10-25. This document is the single definition of the record's format.
+Status: **draft 2**, 2026-10-25. Draft 2 settles the gaps found while building the phone package, the
+enclave and the ledger service (see the changelog at the end). This document is the single definition of the record's format.
 Devote's own services, and anyone who wants to check Devote, implement from it. The JSON Schemas in
 `schemas/` are normative for entry shapes; this text is normative for everything else.
 
@@ -134,6 +135,32 @@ How the values are passed to Semaphore v4 (`generateProof` and `verifyProof`):
 
 A ballot whose proof doesn't bind its commitments and ciphertext is invalid.
 
+The message binds `ct` but not `enc`. Changing `enc` can only make a row undecryptable, never change
+what it says. The voter's phone checks that its exact entry is in the log (section 8), so a changed
+`enc` is caught there.
+
+### Proofs and groups
+
+- A ballot's `proof.merkleTreeDepth` MUST equal the `depth` frozen for its franchise in the manifest.
+  Every proof in a stage then has the same shape, and the depth says nothing about the voter.
+- Phones MUST build their own Merkle path from the public list of admissions (section 11). They MUST
+  never ask a server for "my" path, which would reveal which commitment is theirs.
+
+### Encryption (`hpke-xwing-v1`)
+
+Every row, including demographic and full rows, carries a ciphertext:
+- **Algorithm:** HPKE base mode with the X-Wing KEM (X25519 + ML-KEM-768), HKDF-SHA256 and AES-256-GCM.
+- **Recipient key:** the stage's encryption key (`manifest.encryption`).
+- **`info`:** the bytes `devote-record/row/v1`.
+- **`aad`:** `JCS({ "keyId": ..., "rowType": ..., "scope": ... })`, so a ciphertext only opens as the row
+  it was made for.
+- **Plaintext:** canonical JSON, zero-padded to a multiple of 512 bytes. JSON never contains a NUL byte,
+  so the padding is unambiguous.
+  - **main and demographic rows:** `{ "v": 1, "rowType": ..., "dimension"?: ..., "fields": { <field>:
+    { <level>: { "value": ..., "salt": <base64url> } } } }`. These are the openings of every commitment.
+  - **full rows:** `{ "v": 1, "rowType": "full", "fields": { "choice": ..., "carry": ..., "area": {
+    <level>: <value> }, "demographics": { <dimension>: { <level>: <value> } } } }`.
+
 ### Validity
 
 A `ballot` entry is valid when:
@@ -159,12 +186,21 @@ For stage S of a bill, a voter's counted row is:
 - their last revealed row from an earlier stage of the same bill whose `carry` revealed as `true`, among
   stages listed in S's manifest `carryFrom`.
 
+A carried row counts with the values revealed in its own stage, unless S's `reveal` entries
+**re-reveal** it. A re-reveal names the earlier ballot's leaf index and opens its commitments at the
+same level or a coarser one; `choice` and `carry` can't change. Disclosure control uses this to hide
+small changes between stages (section 10).
+
 ## 7. Anchors
 
-- **`ots-bitcoin-v1`:** an OpenTimestamps proof (base64url) committing to `SHA-256(checkpoint note
-  text)`. It verifies with Bitcoin block headers alone.
-- **`ethereum-l1-v1`:** an Ethereum mainnet transaction whose input data is `0x` followed by
-  `SHA-256(checkpoint note text)`. The anchor gives chain id, transaction hash and block number.
+The anchored value is `SHA-256` of the checkpoint's **signed text**: the note body up to and including
+its final newline, without the blank line and signature lines. Adding a witness cosignature doesn't
+change it. `anchor.checkpoint.noteSha256` is this value.
+
+- **`ots-bitcoin-v1`:** an OpenTimestamps proof (base64url) committing to that value. It verifies with
+  Bitcoin block headers alone.
+- **`ethereum-l1-v1`:** an Ethereum mainnet transaction whose input data is `0x` followed by that value.
+  The anchor gives chain id, transaction hash and block number.
 
 ## 8. Disclosure and reveal
 
@@ -175,6 +211,10 @@ At close, the enclave chooses for every counted row the level at which each fiel
 
 A verifier recomputes the commitment from the revealed `[field, level, value]` and salt. It MUST find the
 result among the ballot's committed values for that field and level.
+
+A counted ballot whose ciphertext doesn't decrypt, or whose plaintext doesn't open its own commitments,
+is revealed as `{ "ballot": <index>, "undecryptable": true }`. It counts nowhere. The tally states how
+many there were (`disclosureReport.undecryptable`), so a high number is visible to everyone.
 
 ## 9. Tally (`reveal-and-count-v1`)
 
@@ -194,7 +234,16 @@ The manifest states `k` and `l`. For each row type, published rows are grouped b
 count.
 Every group MUST have:
 - at least `k` rows;
-- at least `l` distinct `choice` values.
+- at least `l` distinct `choice` values;
+- at least `minChoiceSupport` rows (default 1) behind every choice that appears in it. A value of 2 stops
+  a lone dissenter in a group from learning that everyone else voted the other way.
+
+**Exemption:** a group that contains every published row of its row type (and dimension) is exempt from
+the `l` and `minChoiceSupport` rules. It is the stage's total, which is public anyway. Without this, a
+unanimous stage could never be published.
+
+The groups checked are all rows **counted** in the stage, its own and carried ones, with the values they
+are counted at.
 
 The tally's `disclosureReport` states how many fields were generalised and withheld. Verifiers check the
 rules on what was published. They can't see what was withheld, by design.
@@ -211,7 +260,51 @@ rules on what was published. They can't see what was withheld, by design.
 - Under this scheme Devote vouches for eligibility. `audit` entries give the checks a reader can use;
   later schemes move the signature to independent parties.
 
-## 12. Versioning
+## 12. Live statistics (`confidential-space-dp-v1`)
+
+During a vote the enclave answers slice queries and makes hourly snapshots. Both use exact
+discrete-Gaussian noise under zero-concentrated differential privacy (zCDP). The manifest's optional
+`slice` object states the parameters:
+
+```json
+{ "mechanism": "discrete-gaussian-zcdp", "rhoPerStage": 2, "rhoPerQuery": 0.02, "snapshotShare": 0.5 }
+```
+
+- The budget a stage has spent is counted from its public `query` and `snapshot` entries, so it can't be
+  reset by restarting anything.
+- A question is logged before it is answered, and nothing is answered if logging fails.
+- A **snapshot** is `JCS({ "manifest": <index>, "asOf": <ISO hour>, "sigma": <number>, "tables":
+  [<countTable with noisy counts>] })`. The `snapshot` entry holds its SHA-256. The tally lists where each
+  snapshot is published after close (`tally.snapshots`), and anyone can check the hash.
+
+## 13. Versioning
 
 Changing anything in this document that alters what a valid entry is requires a new envelope `v` or a
 new scheme id. Clarifications don't.
+
+## Appendix A. Canonical ladders (Great Britain, version 1)
+
+Phones, the enclave and published tables use these names and values.
+
+| Field or dimension | Levels, finest first | Values |
+|---|---|---|
+| `area` | `constituency`, `region`, `nation` | ONS GSS codes for the franchise's constituency set; `region` is the ONS region (E12…) in England and the nation code in Scotland, Wales and Northern Ireland; `nation` is E92000001, W92000004, S92000003 or N92000002 |
+| `age` | `5y`, `10y`, `20y` | `5y`: `16-19`, `20-24`, `25-29`, …, `80-84`, `85+`. `10y`: `16-19`, `20-29`, `30-39`, …, `70-79`, `80+`. `20y`: `16-39`, `40-59`, `60-79`, `80+` |
+| `sex` | `value` | `female`, `male`, `other` (as on the identity document) |
+| `ethnicity` | `detailed`, `broad` | `detailed`: the 19 ONS 2021 categories as lowercase slugs; `broad`: `asian`, `black`, `mixed`, `white`, `other` |
+
+Self-declared dimensions (ethnicity and others) are sent only with the voter's explicit consent.
+
+## Changelog
+
+- **Draft 2 (2026-10-25):**
+  - HPKE `info`, `aad` and plaintext format are fixed, with 512-byte padding.
+  - Proof depth is fixed per franchise, and phones build their Merkle path locally.
+  - Carried rows can be re-revealed at a coarser level.
+  - Anchors hash the signed text without signatures.
+  - Undecryptable ballots are marked as such.
+  - New disclosure rules: `minChoiceSupport`, an exemption for whole-stage groups, and checking over
+    counted rows.
+  - Live statistics and snapshot format are defined.
+  - Canonical ladders for Great Britain (Appendix A).
+- **Draft 1 (2026-10-25):** first version.

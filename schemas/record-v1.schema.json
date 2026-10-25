@@ -95,12 +95,24 @@
           "properties": {
             "k": { "type": "integer", "minimum": 2 },
             "l": { "type": "integer", "minimum": 1 },
+            "minChoiceSupport": { "type": "integer", "minimum": 1 },
             "ladders": { "type": "object", "description": "Field (or dimension) name to its levels, finest first.", "additionalProperties": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,39}$" } } }
           }
         },
         "dimensions": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-zA-Z][a-zA-Z0-9-]{0,39}$" } },
         "admissionKeys": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["keyId", "publicKey"], "additionalProperties": false, "properties": { "keyId": { "$ref": "#/$defs/id" }, "publicKey": { "$ref": "#/$defs/b64u" } } } },
         "carryFrom": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+        "slice": {
+          "type": "object",
+          "required": ["mechanism", "rhoPerStage", "rhoPerQuery"],
+          "additionalProperties": false,
+          "properties": {
+            "mechanism": { "const": "discrete-gaussian-zcdp" },
+            "rhoPerStage": { "type": "number", "exclusiveMinimum": 0 },
+            "rhoPerQuery": { "type": "number", "exclusiveMinimum": 0 },
+            "snapshotShare": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
         "retentionUntil": { "$ref": "#/$defs/isoTime" }
       }
     },
@@ -182,10 +194,20 @@
         "rows": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": ["ballot", "fields"],
-            "additionalProperties": false,
-            "properties": { "ballot": { "$ref": "#/$defs/leafIndex" }, "fields": { "type": "object", "additionalProperties": { "$ref": "#/$defs/revealedField" } } }
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["ballot", "fields"],
+                "additionalProperties": false,
+                "properties": { "ballot": { "$ref": "#/$defs/leafIndex" }, "fields": { "type": "object", "additionalProperties": { "$ref": "#/$defs/revealedField" } } }
+              },
+              {
+                "type": "object",
+                "required": ["ballot", "undecryptable"],
+                "additionalProperties": false,
+                "properties": { "ballot": { "$ref": "#/$defs/leafIndex" }, "undecryptable": { "const": true } }
+              }
+            ]
           }
         }
       }
@@ -221,7 +243,8 @@
             "rowsCounted": { "type": "integer", "minimum": 0 },
             "fieldsGeneralised": { "type": "integer", "minimum": 0 },
             "fieldsWithheld": { "type": "integer", "minimum": 0 },
-            "heldBackForDifferencing": { "type": "integer", "minimum": 0 }
+            "heldBackForDifferencing": { "type": "integer", "minimum": 0 },
+            "undecryptable": { "type": "integer", "minimum": 0 }
           }
         },
         "snapshots": { "type": "array", "items": { "type": "object", "required": ["snapshot", "url"], "additionalProperties": false, "properties": { "snapshot": { "$ref": "#/$defs/leafIndex" }, "url": { "type": "string", "maxLength": 500 } } } }

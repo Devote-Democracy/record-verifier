@@ -1,6 +1,6 @@
 {
   "name": "@devotedemocracy/record-verifier",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Independent verifier for the Devote Public Record (record.devotedemocracy.com): formats, Merkle proofs, signed checkpoints, commitments, disclosure rules and recounts.",
   "license": "Apache-2.0",
   "type": "module",

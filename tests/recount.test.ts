@@ -168,13 +168,53 @@ test('publishing at constituency level breaks the k rule', async () => {
   assert.ok(r.disclosureViolations.every((v) => v.rule === 'k'))
 })
 
-test('a unanimous group breaks the l rule', () => {
-  const qis = { area: { level: 'region', value: 'E12000001' } }
-  const rows = [0, 1, 2].map(() => ({ rowType: 'main' as const, choice: 'aye', qis }))
-  const v = checkDisclosure(rows, 2, 2)
+test('a unanimous group breaks the l rule, unless it is the whole stage', () => {
+  const east = { area: { level: 'region', value: 'E12000006' } }
+  const west = { area: { level: 'region', value: 'E12000009' } }
+  const rows = [0, 1, 2].map(() => ({ rowType: 'main' as const, choice: 'aye', qis: east }))
+  assert.deepEqual(checkDisclosure(rows, 2, 2), [], 'the whole stage is exempt')
+  const mixed = [...rows, { rowType: 'main' as const, choice: 'no', qis: west }, { rowType: 'main' as const, choice: 'aye', qis: west }]
+  const v = checkDisclosure(mixed, 2, 2)
   assert.equal(v.length, 1)
   assert.equal(v[0]!.rule, 'l')
-  assert.deepEqual(checkDisclosure([...rows, { rowType: 'main', choice: 'no', qis }], 2, 2), [])
+})
+
+test('minChoiceSupport hides a lone dissenter', () => {
+  const qis = { area: { level: 'region', value: 'E12000006' } }
+  const other = { area: { level: 'region', value: 'E12000009' } }
+  const rows = [
+    ...[0, 1, 2].map(() => ({ rowType: 'main' as const, choice: 'aye', qis })),
+    { rowType: 'main' as const, choice: 'no', qis },
+    ...[0, 1].map(() => ({ rowType: 'main' as const, choice: 'no', qis: other })),
+    ...[0, 1].map(() => ({ rowType: 'main' as const, choice: 'aye', qis: other })),
+  ]
+  assert.deepEqual(checkDisclosure(rows, 2, 2, 1), [])
+  const v = checkDisclosure(rows, 2, 2, 2)
+  assert.equal(v.length, 1)
+  assert.equal(v[0]!.rule, 'minChoiceSupport')
+})
+
+test('an undecryptable final ballot counts nowhere and is reported', async () => {
+  const s = await buildStage()
+  const [first, ...rest] = s.finals
+  const rows = [
+    { ballot: first!, undecryptable: true },
+    ...rest.map((i) => revealRow(i, s.secrets.get(i)!, { choice: 'value', carry: 'value', area: 'nation' })),
+  ]
+  s.add({ v: 1, type: 'reveal', body: { manifest: s.m, rows } })
+  const r = await recountStage(s.log, s.m)
+  assert.equal(r.undecryptable, 1)
+  assert.equal(Object.values(r.totals).reduce((a, b) => a + b, 0), 5)
+  assert.ok(!r.issues.some((i) => i.message.includes('was not revealed') && i.entry === first))
+})
+
+test('a proof at the wrong depth makes the ballot invalid', async () => {
+  const s = await buildStage()
+  const b = await ballot(s.m, 'main', '999', main('aye', true, 'E14000009', 'E12000001'))
+  b.env.body.proof.merkleTreeDepth = 11
+  const i = s.add(b.env)
+  const r = await recountStage(s.log, s.m)
+  assert.ok(r.issues.some((x) => x.entry === i && x.message.includes('proof depth')))
 })
 
 test('carried votes count at the next stage unless the voter votes again', async () => {
@@ -191,4 +231,25 @@ test('carried votes count at the next stage unless the voter votes again', async
   // Carried: main n1, n4, n5, n6 and demographic d1, d2, d4 (n3 and d3 had carry=false).
   assert.equal(r.carriedRows, 7)
   assert.equal(r.tallyMatches, null)
+})
+
+test('a later stage can re-reveal a carried row at a coarser level, never a finer one', async () => {
+  const s = await buildStage()
+  await closeStage(s)
+  const m2 = s.add(manifest('s2', ['s1']))
+  const target = s.finals[1]! // voter 102: carried, revealed at region in stage 1
+  const coarse = revealRow(target, s.secrets.get(target)!, { area: 'nation' })
+  s.add({ v: 1, type: 'reveal', body: { manifest: m2, rows: [coarse] } })
+  const r = await recountStage(s.log, m2)
+  assert.ok(!r.issues.some((i) => i.severity === 'error' && i.entry === target), JSON.stringify(r.issues))
+  const nation = r.tables.find((t) => t.field === 'area' && t.level === 'nation')
+  assert.equal(Object.values(nation!.rows[0]!.counts).reduce((a, b) => a + b, 0), 1)
+
+  const s2 = await buildStage()
+  await closeStage(s2)
+  const n2 = s2.add(manifest('s2', ['s1']))
+  const t2 = s2.finals[1]!
+  s2.add({ v: 1, type: 'reveal', body: { manifest: n2, rows: [revealRow(t2, s2.secrets.get(t2)!, { area: 'constituency' })] } })
+  const r2 = await recountStage(s2.log, n2)
+  assert.ok(r2.issues.some((i) => i.entry === t2 && i.message.includes('finer')))
 })
