@@ -37,7 +37,13 @@ if (command === 'log') {
 } else {
   const index = Number(values.manifest)
   if (!Number.isInteger(index)) { console.error('--manifest <leaf index> is required'); process.exit(2) }
-  const r = await recountStage(log.entries, index)
+  let verifyProof: ((b: Record<string, any>) => Promise<boolean>) | undefined
+  try {
+    verifyProof = (await import('../src/semaphore.ts')).verifyBallotProof
+  } catch {
+    console.log('Membership proofs: install @semaphore-protocol/proof to check them as well.')
+  }
+  const r = await recountStage(log.entries, index, verifyProof ? { verifyProof } : {})
   console.log('Totals:', r.totals)
   console.log(`Counted rows: ${r.countedRows} (${r.carriedRows} carried from earlier stages)`)
   console.log('Published tally matches the recount:', r.tallyMatches === null ? 'no tally yet' : r.tallyMatches)

@@ -125,8 +125,14 @@ commitment = hex( SHA-256( "devote-record/commit/v1" || 0x00 || JCS([field, leve
 message = hex( SHA-256( JCS({ "commitments": <commitments object>, "ciphertext": SHA-256(ciphertext.ct bytes) as hex }) ) )
 ```
 
-The Semaphore proof's `message` is this value, read as a big-endian integer and reduced as Semaphore v4
-reduces messages. A ballot whose proof doesn't bind its commitments and ciphertext is invalid.
+How the values are passed to Semaphore v4 (`generateProof` and `verifyProof`):
+- **message:** the 32 bytes of `message` as a big-endian unsigned integer.
+- **scope:** the big-endian unsigned integer of `SHA-256(UTF-8(scope string))`, for example
+  `SHA-256("bill:<billKey>")`. The scope string itself is too long for Semaphore's 31-byte string form.
+- Semaphore then hashes both, as v4 always does. The proof's public `nullifier` and `merkleTreeRoot`
+  MUST equal the ballot's `nullifier` and `groupRoot`.
+
+A ballot whose proof doesn't bind its commitments and ciphertext is invalid.
 
 ### Validity
 
