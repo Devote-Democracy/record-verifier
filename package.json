@@ -1,6 +1,6 @@
 {
   "name": "@devotedemocracy/record-verifier",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Independent verifier for the Devote Public Record (record.devotedemocracy.com): formats, Merkle proofs, signed checkpoints, commitments, disclosure rules and recounts.",
   "license": "Apache-2.0",
   "type": "module",
@@ -28,18 +28,17 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test --experimental-strip-types --no-warnings tests/*.test.ts",
-    "check": "npm run typecheck && npm test",
-    "prepare": "tsc -p tsconfig.json"
-  },
-  "dependencies": {
-    "ajv": "8.17.1"
+    "check": "npm run gen && git diff --exit-code src/validate.generated.ts && npm run typecheck && npm test",
+    "prepare": "tsc -p tsconfig.json",
+    "gen": "node tool/gen-validator.mjs"
   },
   "devDependencies": {
     "@semaphore-protocol/group": "^4.14.5",
     "@semaphore-protocol/identity": "^4.14.5",
     "@semaphore-protocol/proof": "^4.14.5",
     "@types/node": "22.10.2",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "ajv": "8.17.1"
   },
   "bin": {
     "record-verify": "./dist/cli/record-verify.js"

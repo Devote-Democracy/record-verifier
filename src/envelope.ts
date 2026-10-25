@@ -1,18 +1,17 @@
-import { Ajv2020 } from 'ajv/dist/2020.js'
-import schema from '../schemas/record-v1.schema.json' with { type: 'json' }
 import { canonicalBytes } from './canonical.ts'
+import { validate } from './validate.generated.ts'
 import { leafHash } from './hash.ts'
 
 /** A log entry. Bodies are typed loosely here; the schema is the authority (SPEC.md section 4). */
 export type EntryType = 'manifest' | 'admission' | 'revocation' | 'ballot' | 'reveal' | 'tally' | 'snapshot' | 'query' | 'audit' | 'appBuild' | 'anchor'
 export type Envelope = { v: 1; type: EntryType; schemes?: Record<string, string | string[]>; body: Record<string, any> }
 
-const ajv = new Ajv2020({ allErrors: true, strict: false })
-const validate = ajv.compile(schema)
+// Precompiled from schemas/record-v1.schema.json (npm run gen): no eval at runtime, so it works
+// under a strict Content-Security-Policy.
 
 export function validateEnvelope(value: unknown): { ok: true; envelope: Envelope } | { ok: false; errors: string[] } {
   if (validate(value)) return { ok: true, envelope: value as Envelope }
-  return { ok: false, errors: (validate.errors ?? []).map((e) => `${e.instancePath || '/'} ${e.message ?? 'is invalid'}`) }
+  return { ok: false, errors: ((validate as unknown as { errors?: { instancePath: string; message?: string }[] }).errors ?? []).map((e) => `${e.instancePath || '/'} ${e.message ?? 'is invalid'}`) }
 }
 
 /** The bytes stored as the log entry. */
